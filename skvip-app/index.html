@@ -545,6 +545,16 @@
   color: #ff9f1c;
   box-shadow: 0 0 6px rgba(255,107,0,0.4);
 }
+.td-inline-picker {
+  background: #181929;
+  border: 1px solid rgba(255,107,0,0.25);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+  margin-bottom: 10px;
+  position: relative;
+  z-index: 200;
+  pointer-events: auto;
+}
 </style>
 </head>
 <body>
@@ -922,6 +932,7 @@ let testOverrides = {};   // { cardKey: { predicted, winning, date, period } }
 let _tdPickerCardKey = null;
 let _tdPickerTarget = null;
 let _tdPickerSel = [];
+let _tdPickerCountEl = null;  // reference to active count display element
 
 // ── OVERLAY ──
 function showOverlay(t) { document.getElementById('overlay-text').textContent = t||'載入中...'; document.getElementById('overlay').classList.remove('hidden'); }
@@ -963,8 +974,9 @@ function switchType(type, el) {
 function switchPage(name, el) {
   // BUG2 FIX: close any open picker when switching pages
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  _tdPickerCountEl = null;
   const _pm = document.getElementById('td-picker-modal');
-  if (_pm) _pm.classList.remove('open');
+  if (_pm) { _pm.classList.remove('open'); _pm.style.display = 'none'; }
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
@@ -2280,8 +2292,28 @@ function autoVerifyPredictions(drawDate, drawNumbers, drawSpecial, issue, type) 
 }
 
 // Re-verify ALL unverified predictions by scanning entire DB
-// ── runVerification: verify all predictions across all lottery types ──
+// ── runVerification: verify predictions (test mode uses testOverrides) ──
 function runVerification() {
+  if (testMode && window._isAdmin) {
+    // Test mode: recalculate hits/near from testOverrides
+    const arr = getPredictionsLS();
+    let updated = 0;
+    arr.forEach((rec, i) => {
+      const cardKey = rec.type + '_' + (rec.issue || rec.drawDate || String(i));
+      const ov = testOverrides[cardKey];
+      if (!ov) return;
+      const preds = ov.predicted || rec.numbers || [];
+      const wins  = ov.winning  || [];
+      if (!preds.length || !wins.length) return;
+      ov.hits = preds.filter(n => wins.includes(n)).length;
+      ov.near = preds.filter(n => !wins.includes(n) && wins.some(d => Math.abs(d - n) === 1)).length;
+      updated++;
+    });
+    renderVerifyPage();
+    if (updated > 0) showToast('測試驗證完成，' + updated + ' 筆已計算');
+    return;
+  }
+  // Normal mode: verify against DB draw data
   let count = 0;
   ['hk', 'lotto', '539'].forEach(type => {
     const data = DB[type] || [];
@@ -2295,7 +2327,7 @@ function runVerification() {
   });
   if (count > 0) {
     renderVerifyPage();
-    showToast('\u9a57\u8b49\u5b8c\u6210\uff0c' + count + ' \u7b46\u5df2\u66f4\u65b0');
+    showToast('驗證完成，' + count + ' 筆已更新');
   }
 }
 
@@ -2325,8 +2357,9 @@ async function reVerifyAll() {
 function renderVerifyPage() {
   // BUG2 FIX: remove any leftover inline pickers and close modal
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  _tdPickerCountEl = null;
   const _pm = document.getElementById('td-picker-modal');
-  if (_pm) _pm.classList.remove('open');
+  if (_pm) { _pm.classList.remove('open'); _pm.style.display = 'none'; }
 
   const arr = getPredictionsLS();
 
@@ -2550,39 +2583,76 @@ function tdClickPeriod(event, el) {
   }
 }
 function tdOpenPicker(target, cardKey, type, current) {
-  // Only allowed in test mode
-  if (!testMode) return;
+  if (!testMode || !window._isAdmin) return;
 
   _tdPickerTarget  = target;
   _tdPickerCardKey = cardKey;
   _tdPickerSel     = current.slice();
+  const maxPick    = 99; // unlimited in test mode
+  const maxNum     = (type === 'hk' || type === 'lotto') ? 49 : 39;
 
-  // Test mode: unlimited picks; otherwise use lottery limit
-  const maxPick = testMode ? 99 : ((type === 'hk' || type === 'lotto') ? 6 : 5);
-  const maxNum  = (type === 'hk' || type === 'lotto') ? 49 : 39;
+  // Ensure modal stays closed
+  const modal = document.getElementById('td-picker-modal');
+  if (modal) { modal.classList.remove('open'); modal.style.display = 'none'; }
 
-  const modal   = document.getElementById('td-picker-modal');
-  const titleEl = document.getElementById('td-picker-title');
-  const countEl = document.getElementById('td-picker-count');
-  const numsEl  = document.getElementById('td-picker-nums');
-  if (!modal) return;
+  // Remove any existing inline picker
+  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
 
-  titleEl.textContent = target === 'predicted'
-    ? '\u9078\u64c7\u9810\u6e2c\u865f\u78bc'
-    : '\u9078\u64c7\u958b\u734e\u865f\u78bc';
+  // Find the card
+  const card = document.querySelector('.verify-card[data-cardkey="' + cardKey + '"]');
+  if (!card) return;
 
-  numsEl.innerHTML = '';
+  // Build inline picker panel
+  const panel = document.createElement('div');
+  panel.className = 'td-inline-picker';
+
+  // Header row
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;';
+  const ttl = document.createElement('span');
+  ttl.style.cssText = 'font-size:0.82rem;font-weight:700;color:rgba(255,255,255,0.9);';
+  ttl.textContent = target === 'predicted' ? '選擇預測號碼' : '選擇開獎號碼';
+  const cnt = document.createElement('span');
+  cnt.style.cssText = 'font-size:0.78rem;color:#ff6b00;font-weight:600;';
+  cnt.textContent = _tdPickerSel.length + ' 個已選';
+  _tdPickerCountEl = cnt;
+  hdr.appendChild(ttl);
+  hdr.appendChild(cnt);
+  panel.appendChild(hdr);
+
+  // Number grid
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:12px;';
   for (let n = 1; n <= maxNum; n++) {
     const btn = document.createElement('button');
     btn.textContent = n;
     btn.className = 'td-num-btn' + (_tdPickerSel.includes(n) ? ' selected' : '');
-    btn.onclick = function(e) { e.stopPropagation(); tdToggleNum(n, maxPick, btn); };
-    numsEl.appendChild(btn);
+    btn.onclick = (function(num, b) {
+      return function(e) { e.stopPropagation(); tdToggleNum(num, maxPick, b); };
+    })(n, btn);
+    grid.appendChild(btn);
   }
-  countEl.textContent = _tdPickerSel.length + (maxPick < 99 ? '/' + maxPick : ' \u500b\u5df2\u9078');
+  panel.appendChild(grid);
 
-  modal.classList.add('open');
+  // Action buttons
+  const acts = document.createElement('div');
+  acts.style.cssText = 'display:flex;gap:8px;';
+  const okBtn = document.createElement('button');
+  okBtn.textContent = '確認';
+  okBtn.style.cssText = 'flex:1;padding:9px;border:none;border-radius:10px;background:linear-gradient(135deg,#ff6b00,#ff9f1c);color:#fff;font-size:0.82rem;font-weight:700;cursor:pointer;pointer-events:auto;';
+  okBtn.onclick = function(e) { e.stopPropagation(); tdConfirmPicker(); };
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = 'flex:1;padding:9px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.55);font-size:0.82rem;cursor:pointer;pointer-events:auto;';
+  cancelBtn.onclick = function(e) { e.stopPropagation(); tdClosePicker(); };
+  acts.appendChild(okBtn);
+  acts.appendChild(cancelBtn);
+  panel.appendChild(acts);
+
+  // Insert inline below the card
+  card.insertAdjacentElement('afterend', panel);
 }
+
 function tdToggleNum(n, maxPick, btn) {
   const idx = _tdPickerSel.indexOf(n);
   if (idx >= 0) {
@@ -2592,24 +2662,31 @@ function tdToggleNum(n, maxPick, btn) {
     _tdPickerSel.push(n);
     btn.classList.add('selected');
   }
-  const countEl = document.getElementById('td-picker-count');
-  if (countEl) countEl.textContent = _tdPickerSel.length + (maxPick < 99 ? '/' + maxPick : ' \u500b\u5df2\u9078');
+  // Update count: prefer stored reference (inline), fall back to modal element
+  const countEl = _tdPickerCountEl || document.getElementById('td-picker-count');
+  if (countEl) countEl.textContent = _tdPickerSel.length + (maxPick < 99 ? '/' + maxPick : ' 個已選');
 }
+
 function tdConfirmPicker() {
   const sorted = _tdPickerSel.slice().sort((a, b) => a - b);
   if (!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
   testOverrides[_tdPickerCardKey][_tdPickerTarget] = sorted;
-  const modal = document.getElementById('td-picker-modal');
-  if (modal) modal.classList.remove('open');
+  // Clean up picker UI
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  _tdPickerCountEl = null;
+  const modal = document.getElementById('td-picker-modal');
+  if (modal) { modal.classList.remove('open'); modal.style.display = 'none'; }
   renderVerifyPage();
   runVerification();
 }
+
 function tdClosePicker() {
-  const modal = document.getElementById('td-picker-modal');
-  if (modal) modal.classList.remove('open');
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  _tdPickerCountEl = null;
+  const modal = document.getElementById('td-picker-modal');
+  if (modal) { modal.classList.remove('open'); modal.style.display = 'none'; }
 }
+
 function toggleTestMode() {
   if (!window._isAdmin) return;
   testMode = !testMode;
