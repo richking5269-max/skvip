@@ -2525,62 +2525,78 @@ function tdClickPeriod(event, el) {
   }
 }
 function tdOpenPicker(target, cardKey, type, current) {
-  // BUG1 FIX: use fixed #td-picker-modal overlay instead of inline panel
+  // Issue 1: picker only allowed in test mode
+  if (!testMode) return;
+
   _tdPickerTarget  = target;
   _tdPickerCardKey = cardKey;
   _tdPickerSel     = current.slice();
 
-  const maxPick = (type === 'hk' || type === 'lotto') ? 6 : 5;
+  // Issue 3: unlimited ball selection in test mode
+  const maxPick = testMode ? 99 : ((type === 'hk' || type === 'lotto') ? 6 : 5);
   const maxNum  = (type === 'hk' || type === 'lotto') ? 49 : 39;
 
-  const modal   = document.getElementById('td-picker-modal');
-  const titleEl = document.getElementById('td-picker-title');
-  const countEl = document.getElementById('td-picker-count');
-  const numsEl  = document.getElementById('td-picker-nums');
-  if (!modal) return;
+  // Remove any existing inline picker
+  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
 
-  titleEl.textContent = target === 'predicted'
-    ? '選擇預測號碼（選 ' + maxPick + ' 個）'
-    : '選擇開獎號碼';
+  // Issue 2: insert picker INLINE below the card (sibling, not child — avoids overflow clipping)
+  const card = document.querySelector('.verify-card[data-cardkey="' + cardKey + '"]');
+  if (!card) return;
 
-  numsEl.innerHTML = '';
+  const panel = document.createElement('div');
+  panel.className = 'td-inline-picker';
+  panel.style.cssText = 'background:#1a1a2e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:12px 14px;margin-bottom:10px;position:relative;z-index:100;';
+
+  const titleText = target === 'predicted' ? '\u9078\u64c7\u9810\u6e2c\u865f\u78bc' : '\u9078\u64c7\u958b\u734e\u865f\u78bc';
+  const countText = _tdPickerSel.length + ' \u500b\u5df2\u9078';
+
+  panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+    + '<span style="font-size:0.85rem;color:rgba(255,255,255,0.8);font-weight:600;">' + titleText + '</span>'
+    + '<span id="td-picker-count" style="font-size:0.8rem;color:#ff9f1c;font-weight:700;">' + countText + '</span>'
+    + '</div>'
+    + '<div id="td-picker-nums" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    + '<button onclick="tdClosePicker()" style="padding:6px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem;">\u53d6\u6d88</button>'
+    + '<button onclick="tdConfirmPicker()" style="padding:6px 16px;border-radius:8px;border:none;background:linear-gradient(135deg,#ff9f1c,#ff6b6b);color:#fff;font-weight:700;cursor:pointer;font-size:0.85rem;">\u78ba\u8a8d</button>'
+    + '</div>';
+
+  card.insertAdjacentElement('afterend', panel);
+
+  const numsEl = panel.querySelector('#td-picker-nums');
   for (let n = 1; n <= maxNum; n++) {
     const btn = document.createElement('button');
     btn.textContent = n;
-    btn.className = 'td-num-btn' + (_tdPickerSel.includes(n) ? ' selected' : '');
-    btn.onclick = () => tdToggleNum(n, maxPick, btn);
+    const isSel = _tdPickerSel.includes(n);
+    btn.style.cssText = 'width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,0.2);background:' + (isSel ? 'linear-gradient(135deg,#ff9f1c,#ff6b6b)' : 'rgba(255,255,255,0.05)') + ';color:#fff;cursor:pointer;font-size:0.78rem;font-weight:' + (isSel ? '700' : '400') + ';pointer-events:auto;';
+    if (isSel) btn.dataset.sel = '1';
+    btn.onclick = function(e) { e.stopPropagation(); tdToggleNum(n, maxPick, btn); };
     numsEl.appendChild(btn);
   }
-  countEl.textContent = _tdPickerSel.length + '/' + maxPick;
-
-  modal.classList.add('open');
 }
 function tdToggleNum(n, maxPick, btn) {
   const idx = _tdPickerSel.indexOf(n);
   if (idx >= 0) {
     _tdPickerSel.splice(idx, 1);
-    btn.classList.remove('selected');
+    btn.style.background = 'rgba(255,255,255,0.05)';
+    btn.style.fontWeight = '400';
+    delete btn.dataset.sel;
   } else if (_tdPickerSel.length < maxPick) {
     _tdPickerSel.push(n);
-    btn.classList.add('selected');
+    btn.style.background = 'linear-gradient(135deg,#ff9f1c,#ff6b6b)';
+    btn.style.fontWeight = '700';
+    btn.dataset.sel = '1';
   }
   const countEl = document.getElementById('td-picker-count');
-  if (countEl) countEl.textContent = _tdPickerSel.length + '/' + maxPick;
+  if (countEl) countEl.textContent = _tdPickerSel.length + ' \u500b\u5df2\u9078';
 }
 function tdConfirmPicker() {
   const sorted = _tdPickerSel.slice().sort((a, b) => a - b);
   if (!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
   testOverrides[_tdPickerCardKey][_tdPickerTarget] = sorted;
-  // BUG1 FIX: close modal
-  const modal = document.getElementById('td-picker-modal');
-  if (modal) modal.classList.remove('open');
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
   renderVerifyPage();
 }
 function tdClosePicker() {
-  // BUG1 FIX: close modal and clean up any inline remnants
-  const modal = document.getElementById('td-picker-modal');
-  if (modal) modal.classList.remove('open');
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
 }
 function toggleTestMode() {
