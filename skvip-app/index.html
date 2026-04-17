@@ -490,45 +490,6 @@
     }
     .reason-body { display: none; }
     .reason-body.open { display: block; }
-
-      padding: 2px 8px;
-      margin-right: 8px;
-      background: rgba(255,255,255,0.05);
-      border-radius: 4px;
-      font-size: 0.9rem;
-    }
-    
-  
-/* ── TEST MODE PICKER ── */
-#td-picker-modal {
-  display: none; position: fixed; inset: 0; z-index: 10000;
-  background: rgba(0,0,0,0.72); align-items: center; justify-content: center;
-}
-#td-picker-modal.open { display: flex; }
-#td-picker-inner {
-  background: #181929; border-radius: 18px; padding: 18px 16px 14px;
-  width: min(92vw, 340px); max-height: 78vh; overflow-y: auto;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.7); border: 1px solid rgba(255,107,0,0.25);
-}
-#td-picker-header {
-  display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
-}
-#td-picker-title { font-size: 0.8rem; font-weight: 700; color: rgba(255,255,255,0.9); }
-#td-picker-count { font-size: 0.72rem; color: #ff6b00; font-weight: 600; }
-#td-picker-nums { display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; }
-#td-picker-confirm {
-  width: 100%; margin-top: 12px; padding: 10px;
-  background: linear-gradient(135deg,#ff6b00,#ff9f1c);
-  border: none; border-radius: 10px; color: #fff;
-  font-size: 0.82rem; font-weight: 700; cursor: pointer;
-}
-#td-picker-cancel {
-  width: 100%; margin-top: 8px; padding: 9px;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 10px; color: rgba(255,255,255,0.55);
-  font-size: 0.82rem; cursor: pointer;
-}
 .td-num-btn {
   width: 36px; height: 36px; border-radius: 50%;
   border: 1.5px solid rgba(255,255,255,0.15);
@@ -885,21 +846,6 @@
   });
 </script>
 
-
-<!-- ── TEST MODE NUMBER PICKER ── -->
-<div id="td-picker-modal" onclick="if(event.target===this)tdClosePicker()">
-  <div id="td-picker-inner">
-    <div id="td-picker-header">
-      <span id="td-picker-title"></span>
-      <span id="td-picker-count"></span>
-      <button onclick="tdClosePicker()" style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:1.2rem;cursor:pointer;padding:0 0 0 8px;line-height:1;">✕</button>
-    </div>
-    <div id="td-picker-nums"></div>
-    <button id="td-picker-confirm" onclick="tdConfirmPicker()">確認</button>
-    <button id="td-picker-cancel" onclick="tdClosePicker()">取消</button>
-  </div>
-</div>
-
 <script>
 const ADMIN_EMAIL = 'richking5269@gmail.com';
 const TYPES = {
@@ -974,9 +920,8 @@ function switchType(type, el) {
 function switchPage(name, el) {
   // BUG2 FIX: close any open picker when switching pages
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  document.querySelectorAll('#td-picker-modal, .td-inline-picker').forEach(el => el.remove());
   _tdPickerCountEl = null;
-  const _pm = document.getElementById('td-picker-modal');
-  if (_pm) { _pm.classList.remove('open'); _pm.style.display = 'none'; }
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
@@ -2294,33 +2239,49 @@ function autoVerifyPredictions(drawDate, drawNumbers, drawSpecial, issue, type) 
 // Re-verify ALL unverified predictions by scanning entire DB
 // ── runVerification: verify predictions (test mode uses testOverrides) ──
 function runVerification() {
+  const arr = getPredictionsLS();
+
   if (testMode && window._isAdmin) {
-    // Test mode: recalculate hits/near from testOverrides
-    const arr = getPredictionsLS();
+    // TEST MODE: match each card's effective date to DB draw data
     let updated = 0;
     arr.forEach((rec, i) => {
-      const cardKey = rec.type + '_' + (rec.issue || rec.drawDate || String(i));
-      const ov = testOverrides[cardKey];
-      if (!ov) return;
-      const preds = ov.predicted || rec.numbers || [];
-      const wins  = ov.winning  || [];
-      if (!preds.length || !wins.length) return;
-      ov.hits = preds.filter(n => wins.includes(n)).length;
-      ov.near = preds.filter(n => !wins.includes(n) && wins.some(d => Math.abs(d - n) === 1)).length;
+      const type    = rec.type;
+      const cardKey = type + '_' + (rec.issue || rec.drawDate || String(i));
+      const ov      = testOverrides[cardKey] || {};
+
+      const cardDate = (ov.date || rec.drawDate || rec.date || '')
+                         .toString().replace(/[/]/g, '-').slice(0, 10);
+      if (!cardDate || cardDate.length < 10) return;
+
+      const draws = DB[type] || [];
+      const draw  = draws.find(d => {
+        const dDate = (d.date || '').toString().replace(/[/]/g, '-').slice(0, 10);
+        return dDate === cardDate;
+      });
+      if (!draw || !draw.numbers || !draw.numbers.length) return;
+
+      const predicted = (ov.predicted && ov.predicted.length) ? ov.predicted : (rec.numbers || []);
+      const winning   = (ov.winning   && ov.winning.length)   ? ov.winning   : draw.numbers;
+      if (!predicted.length || !winning.length) return;
+
+      if (!testOverrides[cardKey]) testOverrides[cardKey] = {};
+      testOverrides[cardKey].hits    = predicted.filter(n => winning.includes(n)).length;
+      testOverrides[cardKey].near    = predicted.filter(n => !winning.includes(n)
+        && winning.some(d => Math.abs(d - n) === 1)).length;
+      testOverrides[cardKey].winning = winning;
       updated++;
     });
     renderVerifyPage();
-    if (updated > 0) showToast('測試驗證完成，' + updated + ' 筆已計算');
+    if (updated > 0) showToast('驗證完成，' + updated + ' 筆已計算');
     return;
   }
-  // Normal mode: verify against DB draw data
+
+  // NORMAL MODE: loop through DB draws
   let count = 0;
   ['hk', 'lotto', '539'].forEach(type => {
-    const data = DB[type] || [];
-    data.forEach(draw => {
+    (DB[type] || []).forEach(draw => {
       if (!draw.numbers || !draw.numbers.length) return;
-      const rawDate = (draw.date || '').toString().replace(/\//g, '-');
-      const drawDate = rawDate.slice(0, 10);
+      const drawDate = (draw.date || '').toString().replace(/[/]/g, '-').slice(0, 10);
       if (!drawDate || drawDate.length < 10) return;
       count += autoVerifyPredictions(drawDate, draw.numbers, draw.special || null, draw.period, type);
     });
@@ -2357,9 +2318,8 @@ async function reVerifyAll() {
 function renderVerifyPage() {
   // BUG2 FIX: remove any leftover inline pickers and close modal
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  document.querySelectorAll('#td-picker-modal, .td-inline-picker').forEach(el => el.remove());
   _tdPickerCountEl = null;
-  const _pm = document.getElementById('td-picker-modal');
-  if (_pm) { _pm.classList.remove('open'); _pm.style.display = 'none'; }
 
   const arr = getPredictionsLS();
 
@@ -2584,29 +2544,20 @@ function tdClickPeriod(event, el) {
 }
 function tdOpenPicker(target, cardKey, type, current) {
   if (!testMode || !window._isAdmin) return;
-
   _tdPickerTarget  = target;
   _tdPickerCardKey = cardKey;
   _tdPickerSel     = current.slice();
-  const maxPick    = 99; // unlimited in test mode
+  const maxPick    = 99;
   const maxNum     = (type === 'hk' || type === 'lotto') ? 49 : 39;
 
-  // Ensure modal stays closed
-  const modal = document.getElementById('td-picker-modal');
-  if (modal) { modal.classList.remove('open'); modal.style.display = 'none'; }
+  document.querySelectorAll('#td-picker-modal, .td-inline-picker').forEach(el => el.remove());
 
-  // Remove any existing inline picker
-  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
-
-  // Find the card
   const card = document.querySelector('.verify-card[data-cardkey="' + cardKey + '"]');
   if (!card) return;
 
-  // Build inline picker panel
   const panel = document.createElement('div');
   panel.className = 'td-inline-picker';
 
-  // Header row
   const hdr = document.createElement('div');
   hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;';
   const ttl = document.createElement('span');
@@ -2616,11 +2567,9 @@ function tdOpenPicker(target, cardKey, type, current) {
   cnt.style.cssText = 'font-size:0.78rem;color:#ff6b00;font-weight:600;';
   cnt.textContent = _tdPickerSel.length + ' 個已選';
   _tdPickerCountEl = cnt;
-  hdr.appendChild(ttl);
-  hdr.appendChild(cnt);
+  hdr.appendChild(ttl); hdr.appendChild(cnt);
   panel.appendChild(hdr);
 
-  // Number grid
   const grid = document.createElement('div');
   grid.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:12px;';
   for (let n = 1; n <= maxNum; n++) {
@@ -2634,7 +2583,6 @@ function tdOpenPicker(target, cardKey, type, current) {
   }
   panel.appendChild(grid);
 
-  // Action buttons
   const acts = document.createElement('div');
   acts.style.cssText = 'display:flex;gap:8px;';
   const okBtn = document.createElement('button');
@@ -2645,11 +2593,8 @@ function tdOpenPicker(target, cardKey, type, current) {
   cancelBtn.textContent = '取消';
   cancelBtn.style.cssText = 'flex:1;padding:9px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.55);font-size:0.82rem;cursor:pointer;pointer-events:auto;';
   cancelBtn.onclick = function(e) { e.stopPropagation(); tdClosePicker(); };
-  acts.appendChild(okBtn);
-  acts.appendChild(cancelBtn);
+  acts.appendChild(okBtn); acts.appendChild(cancelBtn);
   panel.appendChild(acts);
-
-  // Insert inline below the card
   card.insertAdjacentElement('afterend', panel);
 }
 
@@ -2662,29 +2607,22 @@ function tdToggleNum(n, maxPick, btn) {
     _tdPickerSel.push(n);
     btn.classList.add('selected');
   }
-  // Update count: prefer stored reference (inline), fall back to modal element
-  const countEl = _tdPickerCountEl || document.getElementById('td-picker-count');
-  if (countEl) countEl.textContent = _tdPickerSel.length + (maxPick < 99 ? '/' + maxPick : ' 個已選');
+  if (_tdPickerCountEl) _tdPickerCountEl.textContent = _tdPickerSel.length + ' 個已選';
 }
 
 function tdConfirmPicker() {
   const sorted = _tdPickerSel.slice().sort((a, b) => a - b);
   if (!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
   testOverrides[_tdPickerCardKey][_tdPickerTarget] = sorted;
-  // Clean up picker UI
-  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  document.querySelectorAll('#td-picker-modal, .td-inline-picker').forEach(el => el.remove());
   _tdPickerCountEl = null;
-  const modal = document.getElementById('td-picker-modal');
-  if (modal) { modal.classList.remove('open'); modal.style.display = 'none'; }
   renderVerifyPage();
   runVerification();
 }
 
 function tdClosePicker() {
-  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  document.querySelectorAll('#td-picker-modal, .td-inline-picker').forEach(el => el.remove());
   _tdPickerCountEl = null;
-  const modal = document.getElementById('td-picker-modal');
-  if (modal) { modal.classList.remove('open'); modal.style.display = 'none'; }
 }
 
 function toggleTestMode() {
