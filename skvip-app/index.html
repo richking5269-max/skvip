@@ -521,6 +521,29 @@
   border: none; border-radius: 10px; color: #fff;
   font-size: 0.82rem; font-weight: 700; cursor: pointer;
 }
+#td-picker-cancel {
+  width: 100%; margin-top: 8px; padding: 9px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px; color: rgba(255,255,255,0.55);
+  font-size: 0.82rem; cursor: pointer;
+}
+.td-num-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05); color: var(--text);
+  font-size: 0.75rem; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; padding: 0;
+  pointer-events: auto;
+}
+.td-num-btn:active { transform: scale(0.88); }
+.td-num-btn.selected {
+  border-color: #ff6b00;
+  background: rgba(255,107,0,0.28);
+  color: #ff9f1c;
+  box-shadow: 0 0 6px rgba(255,107,0,0.4);
+}
 </style>
 </head>
 <body>
@@ -857,9 +880,11 @@
     <div id="td-picker-header">
       <span id="td-picker-title"></span>
       <span id="td-picker-count"></span>
+      <button onclick="tdClosePicker()" style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:1.2rem;cursor:pointer;padding:0 0 0 8px;line-height:1;">✕</button>
     </div>
     <div id="td-picker-nums"></div>
     <button id="td-picker-confirm" onclick="tdConfirmPicker()">確認</button>
+    <button id="td-picker-cancel" onclick="tdClosePicker()">取消</button>
   </div>
 </div>
 
@@ -934,6 +959,11 @@ function switchType(type, el) {
 
 // ── SWITCH PAGE ──
 function switchPage(name, el) {
+  // BUG2 FIX: close any open picker when switching pages
+  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  const _pm = document.getElementById('td-picker-modal');
+  if (_pm) _pm.classList.remove('open');
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -2270,6 +2300,11 @@ async function reVerifyAll() {
 
 // Render AI Verify page
 function renderVerifyPage() {
+  // BUG2 FIX: remove any leftover inline pickers and close modal
+  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  const _pm = document.getElementById('td-picker-modal');
+  if (_pm) _pm.classList.remove('open');
+
   const arr = getPredictionsLS();
 
   // Summary stats
@@ -2490,67 +2525,35 @@ function tdClickPeriod(event, el) {
   }
 }
 function tdOpenPicker(target, cardKey, type, current) {
+  // BUG1 FIX: use fixed #td-picker-modal overlay instead of inline panel
   _tdPickerTarget  = target;
   _tdPickerCardKey = cardKey;
   _tdPickerSel     = current.slice();
-  const maxPick = type === 'big' ? 6 : type === 'power' ? 6 : type === 'lotto' ? 6 : type === 'daily' ? 4 : 5;
-  const maxNum  = type === 'big' ? 49 : type === 'power' ? 38 : type === 'lotto' ? 49 : type === 'daily' ? 10 : 39;
 
-  // Remove any existing inline picker
-  document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
+  const maxPick = (type === 'hk' || type === 'lotto') ? 6 : 5;
+  const maxNum  = (type === 'hk' || type === 'lotto') ? 49 : 39;
 
-  // Find the card DOM element
-  const card = document.querySelector('.verify-card[data-cardkey="' + cardKey + '"]');
-  if (!card) return;
+  const modal   = document.getElementById('td-picker-modal');
+  const titleEl = document.getElementById('td-picker-title');
+  const countEl = document.getElementById('td-picker-count');
+  const numsEl  = document.getElementById('td-picker-nums');
+  if (\!modal) return;
 
-  // Build inline picker panel
-  const panel = document.createElement('div');
-  panel.className = 'td-inline-picker';
-  panel.style.cssText = 'background:rgba(20,20,36,0.98);border:1px solid rgba(255,107,0,0.35);border-radius:12px;padding:12px 10px 10px;margin:8px 0 4px;';
+  titleEl.textContent = target === 'predicted'
+    ? '選擇預測號碼（選 ' + maxPick + ' 個）'
+    : '選擇開獎號碼';
 
-  const titleEl = document.createElement('div');
-  titleEl.style.cssText = 'font-size:0.75rem;font-weight:700;color:rgba(255,255,255,0.8);margin-bottom:10px;';
-  titleEl.textContent = target === 'predicted' ? '選擇預測號碼（選 ' + maxPick + ' 個）' : '選擇開獎號碼';
-  panel.appendChild(titleEl);
-
-  const grid = document.createElement('div');
-  grid.style.cssText = 'display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:10px;';
+  numsEl.innerHTML = '';
   for (let n = 1; n <= maxNum; n++) {
     const btn = document.createElement('button');
     btn.textContent = n;
     btn.className = 'td-num-btn' + (_tdPickerSel.includes(n) ? ' selected' : '');
-    btn.dataset.num = n;
     btn.onclick = () => tdToggleNum(n, maxPick, btn);
-    grid.appendChild(btn);
+    numsEl.appendChild(btn);
   }
-  panel.appendChild(grid);
+  countEl.textContent = _tdPickerSel.length + '/' + maxPick;
 
-  const row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:8px;';
-
-  const confirmBtn = document.createElement('button');
-  confirmBtn.textContent = '確認';
-  confirmBtn.style.cssText = 'flex:1;padding:8px;background:linear-gradient(135deg,#ff6b00,#ff9f1c);border:none;border-radius:8px;color:#fff;font-size:0.8rem;font-weight:700;cursor:pointer;';
-  confirmBtn.onclick = tdConfirmPicker;
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = '取消';
-  cancelBtn.style.cssText = 'flex:1;padding:8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:rgba(255,255,255,0.6);font-size:0.8rem;cursor:pointer;';
-  cancelBtn.onclick = tdClosePicker;
-
-  row.appendChild(confirmBtn);
-  row.appendChild(cancelBtn);
-  panel.appendChild(row);
-
-  // Insert after verify-balls div (zone=pred) or after balls (zone=win)
-  const ballsDiv = card.querySelector('[data-zone="pred"]') || card.querySelector('.verify-balls');
-  if (ballsDiv && ballsDiv.nextSibling) {
-    card.insertBefore(panel, ballsDiv.nextSibling);
-  } else {
-    card.appendChild(panel);
-  }
-  // Scroll into view
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  modal.classList.add('open');
 }
 function tdToggleNum(n, maxPick, btn) {
   const idx = _tdPickerSel.indexOf(n);
@@ -2561,15 +2564,23 @@ function tdToggleNum(n, maxPick, btn) {
     _tdPickerSel.push(n);
     btn.classList.add('selected');
   }
+  const countEl = document.getElementById('td-picker-count');
+  if (countEl) countEl.textContent = _tdPickerSel.length + '/' + maxPick;
 }
 function tdConfirmPicker() {
   const sorted = _tdPickerSel.slice().sort((a, b) => a - b);
-  if (!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
+  if (\!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
   testOverrides[_tdPickerCardKey][_tdPickerTarget] = sorted;
+  // BUG1 FIX: close modal
+  const modal = document.getElementById('td-picker-modal');
+  if (modal) modal.classList.remove('open');
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
   renderVerifyPage();
 }
 function tdClosePicker() {
+  // BUG1 FIX: close modal and clean up any inline remnants
+  const modal = document.getElementById('td-picker-modal');
+  if (modal) modal.classList.remove('open');
   document.querySelectorAll('.td-inline-picker').forEach(el => el.remove());
 }
 function toggleTestMode() {
