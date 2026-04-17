@@ -2537,7 +2537,7 @@ function tdOpenPicker(target, cardKey, type, current) {
   const titleEl = document.getElementById('td-picker-title');
   const countEl = document.getElementById('td-picker-count');
   const numsEl  = document.getElementById('td-picker-nums');
-  if (\!modal) return;
+  if (!modal) return;
 
   titleEl.textContent = target === 'predicted'
     ? '選擇預測號碼（選 ' + maxPick + ' 個）'
@@ -2569,7 +2569,7 @@ function tdToggleNum(n, maxPick, btn) {
 }
 function tdConfirmPicker() {
   const sorted = _tdPickerSel.slice().sort((a, b) => a - b);
-  if (\!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
+  if (!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
   testOverrides[_tdPickerCardKey][_tdPickerTarget] = sorted;
   // BUG1 FIX: close modal
   const modal = document.getElementById('td-picker-modal');
