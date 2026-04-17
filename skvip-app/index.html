@@ -2246,7 +2246,7 @@ function runVerification() {
     let updated = 0;
     arr.forEach((rec, i) => {
       const type    = rec.type;
-      const cardKey = type + '_' + (rec.issue || rec.drawDate || String(i));
+      const cardKey = rec.type + '_' + (rec.drawDate || rec.date || '') + '_' + (rec.issue || '') + '_' + String(i);
       const ov      = testOverrides[cardKey] || {};
 
       const cardDate = (ov.date || rec.drawDate || rec.date || '')
@@ -2330,7 +2330,7 @@ function renderVerifyPage() {
   if (testMode && window._isAdmin) {
     // Test mode: compute hits from testOverrides for each card
     const allHits = arr.map((rec, i) => {
-      const cardKey = rec.type + '_' + (rec.issue || rec.drawDate || String(i));
+      const cardKey = rec.type + '_' + (rec.drawDate || rec.date || '') + '_' + (rec.issue || '') + '_' + String(i);
       const ov = testOverrides[cardKey];
       if (ov && ov.hits !== undefined) return ov.hits;
       if (ov && ov.predicted && ov.winning && ov.winning.length)
@@ -2385,7 +2385,7 @@ function renderVerifyPage() {
   }
 
   listEl.innerHTML = displayArr.map(({ rec, i }) => {
-    const cardKey = rec.type + '_' + (rec.issue || rec.drawDate || String(i));
+    const cardKey = rec.type + '_' + (rec.drawDate || rec.date || '') + '_' + (rec.issue || '') + '_' + String(i);
     const ov = (window._isAdmin && testMode && testOverrides[cardKey]) ? testOverrides[cardKey] : null;
     const editMode = window._isAdmin && testMode;
     const color = TYPE_COLORS[rec.type] || 'var(--active)';
@@ -2447,7 +2447,7 @@ function renderVerifyPage() {
       ? ' · <span onclick="tdClickPeriod(event,this)">' + dispIssue + '</span>'
       : (dispIssue ? ' · ' + dispIssue : '');
 
-    return '<div class="verify-card" data-cardkey="' + cardKey + '" data-cardtype="' + rec.type + '" data-preds="' + predsEnc + '">'
+    return '<div class="verify-card" data-cardkey="' + cardKey + '" data-cardtype="' + rec.type + '" data-cardindex="' + i + '" data-preds="' + predsEnc + '">'
       + '<div class="verify-card-header">'
       + '<span class="verify-type" style="color:' + color + '">' + rec.typeName + '</span>'
       + '<span class="verify-issue">' + titleDate + titleIssue + '</span>'
@@ -2554,7 +2554,8 @@ function tdClickDate(event, el) {
   const cur = (testOverrides[key] && testOverrides[key].date) || el.textContent || '';
   const nd = prompt('請輸入日期 (YYYY-MM-DD):', cur);
   if (nd !== null) {
-    if (!testOverrides[key]) testOverrides[key] = {};
+    if (!testOverrides[key]) testOverrides[key] = JSON.parse(JSON.stringify({}));
+    else testOverrides[key] = JSON.parse(JSON.stringify(testOverrides[key]));
     testOverrides[key].date = nd;
     renderVerifyPage();
     runVerification();
@@ -2569,7 +2570,8 @@ function tdClickPeriod(event, el) {
   const cur = (testOverrides[key] && testOverrides[key].period) || el.textContent || '';
   const np = prompt('請輸入期數:', cur);
   if (np !== null) {
-    if (!testOverrides[key]) testOverrides[key] = {};
+    if (!testOverrides[key]) testOverrides[key] = JSON.parse(JSON.stringify({}));
+    else testOverrides[key] = JSON.parse(JSON.stringify(testOverrides[key]));
     testOverrides[key].period = np;
     renderVerifyPage();
     runVerification();
