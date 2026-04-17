@@ -2268,7 +2268,7 @@ function runVerification() {
       testOverrides[cardKey].hits    = predicted.filter(n => winning.includes(n)).length;
       testOverrides[cardKey].near    = predicted.filter(n => !winning.includes(n)
         && winning.some(d => Math.abs(d - n) === 1)).length;
-      testOverrides[cardKey].winning = winning;
+      testOverrides[cardKey].winning = winning.slice();
       updated++;
     });
     renderVerifyPage();
@@ -2324,23 +2324,49 @@ function renderVerifyPage() {
   const arr = getPredictionsLS();
 
   // Summary stats
-  const verified = arr.filter(r => r.verified);
   const avgEl = document.getElementById('vs-avg');
   const maxEl = document.getElementById('vs-max');
   const stEl  = document.getElementById('vs-status');
-  if (verified.length > 0) {
-    const avgHits = (verified.reduce((s,r) => s + (r.hits||0), 0) / verified.length).toFixed(1);
-    const maxHits = Math.max(...verified.map(r => r.hits||0));
-    const r3 = verified.slice(0,3);
-    const recAvg = r3.reduce((s,r) => s + (r.hits||0), 0) / r3.length;
-    const status = recAvg >= 2 ? '⬆ 強勢' : recAvg >= 1 ? '➡ 穩定' : '⬇ 偏冷';
-    if (avgEl) avgEl.textContent = avgHits + '碼';
-    if (maxEl) maxEl.textContent = maxHits + '碼';
-    if (stEl)  stEl.textContent  = status;
+  if (testMode && window._isAdmin) {
+    // Test mode: compute hits from testOverrides for each card
+    const allHits = arr.map((rec, i) => {
+      const cardKey = rec.type + '_' + (rec.issue || rec.drawDate || String(i));
+      const ov = testOverrides[cardKey];
+      if (ov && ov.hits !== undefined) return ov.hits;
+      if (ov && ov.predicted && ov.winning && ov.winning.length)
+        return ov.predicted.filter(n => ov.winning.includes(n)).length;
+      return rec.verified ? (rec.hits || 0) : null;
+    }).filter(h => h !== null);
+    if (allHits.length > 0) {
+      const avgHits = (allHits.reduce((s,h) => s + h, 0) / allHits.length).toFixed(1);
+      const maxHits = Math.max(...allHits);
+      const r3Hits  = allHits.slice(0, 3);
+      const recAvg  = r3Hits.reduce((s,h) => s + h, 0) / r3Hits.length;
+      const status  = recAvg >= 2 ? '⬆ 強勢' : recAvg >= 1 ? '➡ 穩定' : '⬇ 偏冷';
+      if (avgEl) avgEl.textContent = avgHits + '碼';
+      if (maxEl) maxEl.textContent = maxHits + '碼';
+      if (stEl)  stEl.textContent  = status;
+    } else {
+      if (avgEl) avgEl.textContent = '計算中...';
+      if (maxEl) maxEl.textContent = '計算中...';
+      if (stEl)  stEl.textContent  = '等待數據';
+    }
   } else {
-    if (avgEl) avgEl.textContent = '計算中...';
-    if (maxEl) maxEl.textContent = '計算中...';
-    if (stEl)  stEl.textContent  = '等待數據';
+    const verified = arr.filter(r => r.verified);
+    if (verified.length > 0) {
+      const avgHits = (verified.reduce((s,r) => s + (r.hits||0), 0) / verified.length).toFixed(1);
+      const maxHits = Math.max(...verified.map(r => r.hits||0));
+      const r3 = verified.slice(0,3);
+      const recAvg = r3.reduce((s,r) => s + (r.hits||0), 0) / r3.length;
+      const status = recAvg >= 2 ? '⬆ 強勢' : recAvg >= 1 ? '➡ 穩定' : '⬇ 偏冷';
+      if (avgEl) avgEl.textContent = avgHits + '碼';
+      if (maxEl) maxEl.textContent = maxHits + '碼';
+      if (stEl)  stEl.textContent  = status;
+    } else {
+      if (avgEl) avgEl.textContent = '計算中...';
+      if (maxEl) maxEl.textContent = '計算中...';
+      if (stEl)  stEl.textContent  = '等待數據';
+    }
   }
 
   const listEl = document.getElementById('verify-list');
@@ -2369,10 +2395,14 @@ function renderVerifyPage() {
                     : (rec.verified && rec.drawNumbers ? rec.drawNumbers : null);
     const dispDate  = ov && ov.date   ? ov.date   : (rec.drawDate || '');
     const dispIssue = ov && ov.period ? ov.period : (rec.issue ? '第' + rec.issue + '期' : '');
-    const dispHits  = (ov && ov.predicted && ov.winning && ov.winning.length)
-                    ? ov.predicted.filter(n => ov.winning.includes(n)).length : (rec.hits || 0);
-    const dispNear  = (ov && ov.predicted && ov.winning && ov.winning.length)
-                    ? ov.predicted.filter(n => !ov.winning.includes(n) && ov.winning.some(d => Math.abs(d-n)===1)).length : (rec.nearHits || 0);
+    const dispHits = (ov && ov.hits !== undefined) ? ov.hits
+                    : (ov && ov.predicted && ov.winning && ov.winning.length)
+                      ? ov.predicted.filter(n => ov.winning.includes(n)).length
+                      : (rec.hits || 0);
+    const dispNear = (ov && ov.near !== undefined) ? ov.near
+                    : (ov && ov.predicted && ov.winning && ov.winning.length)
+                      ? ov.predicted.filter(n => !ov.winning.includes(n) && ov.winning.some(d => Math.abs(d-n)===1)).length
+                      : (rec.nearHits || 0);
 
     const predsEnc = dispNums.join(',');
     const numbersHtml = dispNums.map(n => {
@@ -2403,9 +2433,12 @@ function renderVerifyPage() {
              + (rec.specialHit ? '　🎯 特別號命中！' : '') + '</div>')
           : '<div class="verify-result pending" style="font-size:0.73rem;">📡 本期預測已記錄，將於開獎後自動驗證</div>');
 
-    const hotHtml  = (rec.hot||[]).length  ? rec.hot.map(n  => '<span class="reason-tag hot">'  + String(n).padStart(2,'0') + '</span>').join('') : '<span style="color:var(--muted);font-size:0.68rem">無</span>';
-    const coldHtml = (rec.cold||[]).length ? rec.cold.map(n => '<span class="reason-tag cold">' + String(n).padStart(2,'0') + '</span>').join('') : '<span style="color:var(--muted);font-size:0.68rem">無</span>';
-    const zHtml = Object.entries(rec.distribution||{}).map(([r,c]) => '<span class="zone-label">' + r + ':' + c + '</span>').join('');
+    const hotSrc  = (ov && ov.hot)          ? ov.hot          : (rec.hot||[]);
+    const coldSrc = (ov && ov.cold)         ? ov.cold         : (rec.cold||[]);
+    const distSrc = (ov && ov.distribution) ? ov.distribution : (rec.distribution||{});
+    const hotHtml  = hotSrc.length  ? hotSrc.map(n  => '<span class="reason-tag hot">'  + String(n).padStart(2,'0') + '</span>').join('') : '<span style="color:var(--muted);font-size:0.68rem">無</span>';
+    const coldHtml = coldSrc.length ? coldSrc.map(n => '<span class="reason-tag cold">' + String(n).padStart(2,'0') + '</span>').join('') : '<span style="color:var(--muted);font-size:0.68rem">無</span>';
+    const zHtml = Object.entries(distSrc).map(([r,c]) => '<span class="zone-label">' + r + ':' + c + '</span>').join('');
 
     const titleDate  = editMode && dispDate
       ? '<span onclick="tdClickDate(event,this)">' + dispDate + '</span>'
@@ -2542,6 +2575,33 @@ function tdClickPeriod(event, el) {
     runVerification();
   }
 }
+function recalculateLogic(predicted, type) {
+  // Compute hot / cold / distribution from DB draw history for the given predicted set
+  const draws = (DB[type] || []).slice(0, 30);
+  const freq  = {};
+  draws.forEach(d => {
+    (d.numbers || []).forEach(n => { freq[n] = (freq[n] || 0) + 1; });
+  });
+  const maxNum = (type === 'hk' || type === 'lotto') ? 49 : 39;
+  const allNums = [];
+  for (let n = 1; n <= maxNum; n++) allNums.push({ n, f: freq[n] || 0 });
+  allNums.sort((a, b) => b.f - a.f);
+  const hot  = allNums.slice(0,  6).map(x => x.n).filter(n => predicted.includes(n));
+  const cold = allNums.slice(-6)   .map(x => x.n).filter(n => predicted.includes(n));
+  const zoneMap = {
+    '539'  : [[1,10],[11,20],[21,30],[31,39]],
+    'lotto': [[1,10],[11,20],[21,30],[31,40],[41,49]],
+    'hk'   : [[1,10],[11,20],[21,30],[31,38]]
+  };
+  const zones = zoneMap[type] || zoneMap['lotto'];
+  const distribution = {};
+  zones.forEach(([lo, hi]) => {
+    const cnt = predicted.filter(n => n >= lo && n <= hi).length;
+    if (cnt > 0) distribution[lo + '-' + hi] = cnt;
+  });
+  return { hot, cold, distribution };
+}
+
 function tdOpenPicker(target, cardKey, type, current) {
   if (!testMode || !window._isAdmin) return;
   _tdPickerTarget  = target;
@@ -2612,8 +2672,22 @@ function tdToggleNum(n, maxPick, btn) {
 
 function tdConfirmPicker() {
   const sorted = _tdPickerSel.slice().sort((a, b) => a - b);
-  if (!testOverrides[_tdPickerCardKey]) testOverrides[_tdPickerCardKey] = {};
+  // Deep copy to prevent shared object references between cards (FIX: 問題2)
+  if (!testOverrides[_tdPickerCardKey]) {
+    testOverrides[_tdPickerCardKey] = {};
+  } else {
+    testOverrides[_tdPickerCardKey] = JSON.parse(JSON.stringify(testOverrides[_tdPickerCardKey]));
+  }
   testOverrides[_tdPickerCardKey][_tdPickerTarget] = sorted;
+  // Recalculate hot/cold/distribution when predicted numbers change (FIX: 問題3)
+  if (_tdPickerTarget === 'predicted') {
+    const cardEl = document.querySelector('.verify-card[data-cardkey="' + _tdPickerCardKey + '"]');
+    const type = cardEl ? cardEl.dataset.cardtype : (_tdPickerCardKey.split('_')[0] || 'lotto');
+    const logic = recalculateLogic(sorted, type);
+    testOverrides[_tdPickerCardKey].hot = logic.hot;
+    testOverrides[_tdPickerCardKey].cold = logic.cold;
+    testOverrides[_tdPickerCardKey].distribution = logic.distribution;
+  }
   document.querySelectorAll('#td-picker-modal, .td-inline-picker').forEach(el => el.remove());
   _tdPickerCountEl = null;
   renderVerifyPage();
