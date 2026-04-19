@@ -905,8 +905,8 @@
         <button class="btn-logout" onclick="signOutUser()">登出</button>
       `;
 
-      await window.loadData();
-      await window.loadSavedModels();
+      await loadData();
+      await loadSavedModels();
       hideOverlay();
     } else {
       document.getElementById('login-screen').style.display = 'flex';
@@ -964,7 +964,7 @@ async function loadData() {
   const fb = window._fb;
   for (const type of ['hk','lotto','539']) {
     try {
-      const q = fb.query(fb.collection(fb.db, `lotteryData/${type}/draws`), fb.orderBy('period','desc'));
+      const q = fb.query(fb.collection(fb.db, `lotteryData/${type}/draws`), fb.orderBy('period','desc'), fb.limit(100));
       const snap = await fb.getDocs(q);
       DB[type] = snap.docs.map(d => d.data());
       // 數字排序（避免字串排序999>3315的bug）
@@ -1456,7 +1456,7 @@ function buildPrediction(type) {
 // ── MAIN: 開始預測 ──
 async function startPrediction() {
   // Trial limit check
-  if (\!_isUnlocked()) {
+  if (!_isUnlocked()) {
     var _cnt = _getUseCount();
     if (_cnt >= _TRIAL_LIMIT) { showKeyModal(); return; }
     _setUseCount(_cnt + 1);
@@ -2901,7 +2901,7 @@ function showKeyModal() {
 function submitKey() {
   var val = (document.getElementById('km-key-input').value || '').trim().toUpperCase();
   var errEl = document.getElementById('km-error');
-  if (\!val) { errEl.textContent = '請輸入金鑰'; return; }
+  if (!val) { errEl.textContent = '請輸入金鑰'; return; }
   if (_VALID_KEYS.includes(val)) {
     localStorage.setItem('skvip_unlocked', 'true');
     document.getElementById('key-modal').style.display = 'none';
