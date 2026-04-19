@@ -516,6 +516,76 @@
   z-index: 200;
   pointer-events: auto;
 }
+
+/* ── TRIAL / KEY-UNLOCK MODAL ── */
+.key-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.82);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  justify-content: center; align-items: center;
+  z-index: 9999; padding: 20px; box-sizing: border-box;
+}
+.key-box {
+  width: 100%; max-width: 360px;
+  background: linear-gradient(160deg,#18181c,#111115);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 20px; padding: 28px 22px 22px;
+  text-align: center; color: #fff;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  animation: kmSlideUp .28s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes kmSlideUp {
+  from { opacity:0; transform:translateY(30px) scale(.96); }
+  to   { opacity:1; transform:translateY(0) scale(1); }
+}
+.key-box .km-lock { font-size:2.3rem; margin-bottom:10px; display:block; }
+.key-box h2 { font-size:1.18rem; font-weight:800; margin:0 0 6px; letter-spacing:.5px; }
+.key-box .km-badge {
+  display:inline-block; background:rgba(255,100,0,.15);
+  color:#ff8c42; font-size:.72rem; font-weight:700;
+  border-radius:20px; padding:3px 12px; margin-bottom:14px; letter-spacing:.3px;
+}
+.key-box .km-desc {
+  font-size:.83rem; color:rgba(255,255,255,.5);
+  margin-bottom:18px; line-height:1.6;
+}
+.key-box .km-line-btn {
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  margin:0 0 16px; padding:13px 0; border-radius:12px;
+  background:#06c755; color:#fff; font-size:.9rem; font-weight:800;
+  text-decoration:none; letter-spacing:.3px;
+  box-shadow:0 4px 18px rgba(6,199,85,.35); transition:filter .15s;
+}
+.key-box .km-line-btn:active { filter:brightness(.88); }
+.key-box .km-divider {
+  display:flex; align-items:center; gap:8px;
+  margin-bottom:14px; color:rgba(255,255,255,.22); font-size:.72rem;
+}
+.key-box .km-divider::before, .key-box .km-divider::after {
+  content:''; flex:1; height:1px; background:rgba(255,255,255,.1);
+}
+.key-box .km-input {
+  width:100%; padding:13px 14px; border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.06); color:#fff;
+  font-size:.88rem; letter-spacing:1.5px; box-sizing:border-box;
+  outline:none; transition:border-color .2s; margin-bottom:10px;
+  text-align:center;
+}
+.key-box .km-input:focus { border-color:rgba(0,198,255,.55); }
+.key-box .km-input::placeholder { color:rgba(255,255,255,.28); letter-spacing:.5px; font-size:.8rem; }
+.key-box .km-unlock-btn {
+  width:100%; padding:13px 0; border-radius:12px; border:none;
+  background:linear-gradient(135deg,#00c6ff,#0072ff);
+  color:#fff; font-size:.9rem; font-weight:800; cursor:pointer;
+  letter-spacing:.5px; box-shadow:0 4px 18px rgba(0,114,255,.35);
+  transition:filter .15s;
+}
+.key-box .km-unlock-btn:active { filter:brightness(.88); }
+.key-box .km-error {
+  color:#ff5f5f; font-size:.78rem; margin-top:9px;
+  min-height:18px; letter-spacing:.2px;
+}
 </style>
 </head>
 <body>
@@ -1385,7 +1455,13 @@ function buildPrediction(type) {
 
 // ── MAIN: 開始預測 ──
 async function startPrediction() {
-  
+  // Trial limit check
+  if (\!_isUnlocked()) {
+    var _cnt = _getUseCount();
+    if (_cnt >= _TRIAL_LIMIT) { showKeyModal(); return; }
+    _setUseCount(_cnt + 1);
+  }
+
   const type = currentType;
   const cfg  = TYPES[type];
   const data = DB[type];
@@ -2804,5 +2880,57 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+
+// ── TRIAL LIMIT + KEY UNLOCK ──
+const _VALID_KEYS = [
+  'VIP-539-728','VIP-539-415','VIP-539-932','VIP-539-667','VIP-539-284',
+  'VIP-539-851','VIP-539-603','VIP-539-119','VIP-539-476','VIP-539-990',
+  'DEV-TEST-000'
+];
+const _TRIAL_LIMIT = 5;
+function _getUseCount()  { return parseInt(localStorage.getItem('skvip_useCount') || '0'); }
+function _setUseCount(n) { localStorage.setItem('skvip_useCount', String(n)); }
+function _isUnlocked()   { return localStorage.getItem('skvip_unlocked') === 'true'; }
+
+function showKeyModal() {
+  document.getElementById('km-error').textContent = '';
+  document.getElementById('km-key-input').value = '';
+  document.getElementById('key-modal').style.display = 'flex';
+  setTimeout(() => { var el = document.getElementById('km-key-input'); if(el) el.focus(); }, 300);
+}
+function submitKey() {
+  var val = (document.getElementById('km-key-input').value || '').trim().toUpperCase();
+  var errEl = document.getElementById('km-error');
+  if (\!val) { errEl.textContent = '請輸入金鑰'; return; }
+  if (_VALID_KEYS.includes(val)) {
+    localStorage.setItem('skvip_unlocked', 'true');
+    document.getElementById('key-modal').style.display = 'none';
+    showToast('🎉 解鎖成功！歡迎使用完整功能');
+  } else {
+    errEl.textContent = '❌ 金鑰錯誤，請確認後重新輸入';
+    document.getElementById('km-key-input').select();
+  }
+}
+
 </script>
+
+<\!-- TRIAL KEY-UNLOCK MODAL -->
+<div id="key-modal" class="key-modal">
+  <div class="key-box">
+    <span class="km-lock">🔒</span>
+    <h2>試用次數已用完</h2>
+    <span class="km-badge">免費體驗 5 次</span>
+    <p class="km-desc">你已完成 5 次免費體驗<br>想繼續使用 AI 預測功能<br>請聯絡管理員取得專屬金鑰</p>
+    <a href="https://line.me/ti/p/k750LnkDH9" target="_blank" class="km-line-btn">
+      💬&nbsp; 點擊聯絡管理員取得金鑰
+    </a>
+    <div class="km-divider">或輸入已有金鑰</div>
+    <input id="km-key-input" class="km-input" type="text"
+           placeholder="VIP-XXX-000"
+           autocomplete="off" autocorrect="off" spellcheck="false"
+           onkeydown="if(event.key==='Enter')submitKey()" />
+    <button class="km-unlock-btn" onclick="submitKey()">🔓 立即解鎖</button>
+    <div id="km-error" class="km-error"></div>
+  </div>
+</div>
 </html>
