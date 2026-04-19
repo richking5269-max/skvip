@@ -964,11 +964,17 @@ async function loadData() {
   const fb = window._fb;
   for (const type of ['hk','lotto','539']) {
     try {
-      const q = fb.query(fb.collection(fb.db, `lotteryData/${type}/draws`), fb.orderBy('period','desc'), fb.limit(100));
+      const q = fb.query(fb.collection(fb.db, `lotteryData/${type}/draws`), fb.orderBy('date','desc'), fb.limit(100));
       const snap = await fb.getDocs(q);
       DB[type] = snap.docs.map(d => d.data());
       // 數字排序（避免字串排序999>3315的bug）
-      DB[type].sort((a,b) => { const na=parseInt(a.period),nb=parseInt(b.period); return (!isNaN(na)&&!isNaN(nb)) ? nb-na : b.period.localeCompare(a.period); });
+      DB[type].sort((a, b) => {
+        const da = new Date(String(a.date||'').replace(/[/]/g,'-'));
+        const db2 = new Date(String(b.date||'').replace(/[/]/g,'-'));
+        if (!isNaN(da) && !isNaN(db2) && da.getFullYear() > 1970) return db2 - da;
+        const na = parseInt(a.period), nb = parseInt(b.period);
+        return (!isNaN(na) && !isNaN(nb)) ? nb - na : String(b.period).localeCompare(String(a.period));
+      });
     } catch(e) { DB[type] = []; }
   }
   try { renderAll(); } catch(e) { console.error('renderAll error:', e); }
