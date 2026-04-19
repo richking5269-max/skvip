@@ -2030,50 +2030,101 @@ function parseCSV(text, type) {
 function parseXLSX(rows, type) {
   const records = [];
   if (rows.length < 2) { showImportPreview([], type); return; }
-  const header0 = String(rows[0][0]||'');
+
+  // Helper: convert cell value to YYYY/MM/DD string
+  function toDateStr(v) {
+    if (!v && v !== 0) return '';
+    if (v instanceof Date) {
+      return v.getFullYear() + '/' +
+             String(v.getMonth()+1).padStart(2,'0') + '/' +
+             String(v.getDate()).padStart(2,'0');
+    }
+    if (typeof v === 'number') {
+      // Excel serial date
+      const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+      return d.getFullYear() + '/' +
+             String(d.getMonth()+1).padStart(2,'0') + '/' +
+             String(d.getDate()).padStart(2,'0');
+    }
+    return String(v).trim().replace(/-/g, '/');
+  }
+
+  const h0 = String(rows[0][0]||'').trim();
   const h1 = String(rows[0][1]||'').trim();
-  const isOfficial = h1 === '期別' || h1 === '期數' && String(rows[0][2]||'').includes('日');
+  const h2 = String(rows[0][2]||'').trim();
+
+  // Format A — Simplified 4-col: 期數 | 開獎日期 | 號碼(逗號) | 特別號
+  //   Header row[0] col0 contains '期', col2 contains '號'
+  const isSimple4Col = h0.includes('期') && h2.includes('號');
+
+  // Format B — Official TW government format: blank | 期別/期數 | 日期 | num...
+  const isOfficial = h1 === '期別' || (h1 === '期數' && h2.includes('日'));
+
+  const pickN = type === '539' ? 5 : 6;
+  const maxNum = type === '539' ? 39 : 49;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.every(c => c==='' || c===null || c===undefined)) continue;
-    let period, date, nums=[], special;
+    let period = '', date = '', nums = [], special;
 
-    if (isOfficial) {
-      period = String(row[1]||'').trim();
-      const rawDate = row[2];
-      if (rawDate instanceof Date) {
-        date = rawDate.getFullYear()+'/'+(String(rawDate.getMonth()+1).padStart(2,'0'))+'/'+String(rawDate.getDate()).padStart(2,'0');
-      } else if (typeof rawDate === 'number') {
-        const d = new Date(Math.round((rawDate - 25569)*86400*1000));
-        date = d.getFullYear()+'/'+(String(d.getMonth()+1).padStart(2,'0'))+'/'+String(d.getDate()).padStart(2,'0');
+    if (isSimple4Col) {
+      // Col 0: 期數, Col 1: 日期, Col 2: 號碼(逗號分隔), Col 3: 特別號
+      period = String(row[0]||'').trim();
+      if (!period || isNaN(parseInt(period))) continue;
+      date = toDateStr(row[1]);
+
+      const numCell = String(row[2]||'').trim();
+      if (numCell.includes(',')) {
+        // Comma-separated numbers in one cell: "05,32,34,38,39,49"
+        nums = numCell.split(',')
+          .map(s => parseInt(s.trim()))
+          .filter(n => !isNaN(n) && n >= 1 && n <= maxNum);
       } else {
-        date = String(rawDate||'').trim();
+        // Fallback: individual columns starting from col 2
+        for (let c = 2; c < row.length - 1; c++) {
+          const n = parseInt(row[c]);
+          if (n >= 1 && n <= maxNum) nums.push(n);
+        }
       }
+      if (nums.length < pickN) continue;
+      nums = nums.slice(0, pickN);
+
+      // Special number in last column
+      const spVal = row[3];
+      if (spVal !== undefined && spVal !== '') {
+        const sp = parseInt(spVal);
+        if (sp >= 1 && sp <= 49) special = sp;
+      }
+
+    } else if (isOfficial) {
+      // Official format: col1=期號, col2=日期, cols3..=numbers
+      period = String(row[1]||'').trim();
+      date = toDateStr(row[2]);
       if (type === '539') {
-        for (let c=3;c<=7;c++) { const n=parseInt(row[c]); if(n>=1&&n<=39) nums.push(n); }
+        for (let c=3; c<=7; c++) { const n=parseInt(row[c]); if(n>=1&&n<=39) nums.push(n); }
         if (nums.length !== 5) continue;
       } else {
-        for (let c=3;c<=8;c++) { const n=parseInt(row[c]); if(n>=1&&n<=49) nums.push(n); }
+        for (let c=3; c<=8; c++) { const n=parseInt(row[c]); if(n>=1&&n<=49) nums.push(n); }
         if (nums.length < 6) continue;
         if (TYPES[type] && TYPES[type].special) {
           const sp = parseInt(row[9]);
-          if (sp >= 1) special = sp;
+          if (sp >= 1 && sp <= 49) special = sp;
         }
       }
+
     } else {
-      // 自訂格式：期數, 日期, n1, n2, ...
+      // Generic: col0=期號, col1=日期, cols2..=individual numbers
       period = String(row[0]||'').trim();
-      date   = String(row[1]||'').trim();
+      date   = toDateStr(row[1]);
       for (let c = 2; c < row.length; c++) {
         const n = parseInt(row[c]);
-        const max = type === '539' ? 39 : 49;
-        if (n >= 1 && n <= max) nums.push(n);
+        if (n >= 1 && n <= maxNum) nums.push(n);
       }
-      const pickN = type === '539' ? 5 : 6;
       if (nums.length < pickN) continue;
       nums = nums.slice(0, pickN);
     }
+
     if (!period) continue;
     const rec = { period, date: date || '', numbers: nums.sort((a,b) => a-b) };
     if (special !== undefined && !isNaN(special)) rec.special = special;
@@ -2093,7 +2144,8 @@ function showImportPreview(records, type) {
   }
   window._importRecords = records;
   window._importType    = type;
-  el.innerHTML = `解析成功：共 <strong>${records.length}</strong> 筆，最新期號 ${records[0].period}`;
+  const latestPeriod = records[records.length-1].period;
+  el.innerHTML = `解析成功：共 <strong>${records.length}</strong> 筆，最新期號 ${latestPeriod}`;
   el.style.display = 'block';
   btn.style.display = 'block';
 }
