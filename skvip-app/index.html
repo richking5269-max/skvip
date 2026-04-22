@@ -905,8 +905,8 @@
         <button class="btn-logout" onclick="signOutUser()">登出</button>
       `;
 
-      await loadData();
-      await loadSavedModels();
+      await window.loadData();
+      await window.loadSavedModels();
       hideOverlay();
     } else {
       document.getElementById('login-screen').style.display = 'flex';
@@ -962,7 +962,7 @@ function signIn() { showOverlay('登入中...'); window._fb.signInWithPopup(wind
 function signOutUser() { window._fb.signOut(window._fb.auth); }
 
 // ── LOAD DATA ──
-async function loadData() {
+window.loadData = async function loadData() {
   showOverlay('載入開獎資料...');
   const fb = window._fb;
   for (const type of ['hk','lotto','539']) {
@@ -1268,7 +1268,7 @@ async function fetchLatest(type) {
 // ── AI MODEL PERSISTENCE (IndexedDB via TF.js) ──
 const AI_MODEL_KEY = (type) => 'indexeddb://skvip-ai-' + type;
 
-async function loadSavedModels() {
+window.loadSavedModels = async function loadSavedModels() {
   for (const type of ['hk', 'lotto', '539']) {
     try {
       const model = await tf.loadLayersModel(AI_MODEL_KEY(type));
@@ -2901,7 +2901,7 @@ function showKeyModal() {
 async function submitKey() {
   var val = (document.getElementById('km-key-input').value || '').trim().toUpperCase();
   var errEl = document.getElementById('km-error');
-  if (\!val) { errEl.textContent = '請輸入金鑰'; return; }
+  if (!val) { errEl.textContent = '請輸入金鑰'; return; }
   try {
     const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(val));
     const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
