@@ -758,7 +758,7 @@
     <!-- ── CH    <!-- AI VERIFY PAGE -->
     <div class="page" id="page-check">
       <div class="verify-summary-card">
-        <div class="verify-summary-title" style="display:flex;justify-content:space-between;align-items:center;">🤖 AI驗證總覽 <span style="font-size:0.7rem;color:var(--muted)">近10期統計</span><button class="recheck-btn" onclick="runVerification()">重新驗證</button></div>
+        <div class="verify-summary-title" style="display:flex;justify-content:space-between;align-items:center;">🤖 AI驗證總覽 <span style="font-size:0.7rem;color:var(--muted)">近10期統計</span><button class="recheck-btn" onclick="reRunVerification()">重新驗證</button></div>
         <div class="verify-stats-row"></div>
         <div class="verify-stats-row">
           <div class="verify-stat"><div class="verify-stat-val" id="vs-avg">--</div><div class="verify-stat-lbl">平均命中</div></div>
@@ -2356,6 +2356,39 @@ function autoVerifyPredictions(drawDate, drawNumbers, drawSpecial, issue, type) 
 }
 
 // Re-verify ALL unverified predictions by scanning entire DB
+// ── reRunVerification: force re-verify ALL records (ignores rec.verified flag) ──
+function reRunVerification() {
+  const arr = getPredictionsLS();
+  if (arr.length === 0) { showToast('暫無預測紀錄'); return; }
+
+  // Reset verified status on all records so autoVerifyPredictions can process them
+  arr.forEach(rec => {
+    rec.verified  = false;
+    rec.hits      = 0;
+    rec.nearHits  = 0;
+    rec.specialHit = false;
+  });
+  setPredictionsLS(arr);
+
+  // Now scan all three types
+  let count = 0;
+  ['hk', 'lotto', '539'].forEach(type => {
+    (DB[type] || []).forEach(draw => {
+      if (!draw.numbers || !draw.numbers.length) return;
+      const drawDate = (draw.date || '').toString().replace(/[/]/g, '-').slice(0, 10);
+      if (!drawDate || drawDate.length < 10) return;
+      count += autoVerifyPredictions(drawDate, draw.numbers, draw.special || null, draw.period, type);
+    });
+  });
+
+  renderVerifyPage();
+  if (count > 0) {
+    showToast('重新驗證完成，' + count + ' 筆已更新');
+  } else {
+    showToast('未找到符合的開獎資料（DB 僅含最近 100 期）');
+  }
+}
+
 // ── runVerification: verify predictions (test mode uses testOverrides) ──
 function runVerification() {
   const arr = getPredictionsLS();
